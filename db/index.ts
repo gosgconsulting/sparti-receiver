@@ -112,33 +112,65 @@ async function getNextBatchId(tableName: string = "sheet_data"): Promise<number>
 }
 
 /**
- * Insert rows individually when batch insert fails
+ * Insert rows in chunks to avoid stack overflow with large datasets
  * @param insertData - Array of data to insert
  * @param sheetDataArray - Original sheet data array for error reporting
+ * @param chunkSize - Number of rows to insert per chunk (default: 5000)
  * @returns Promise<{inserted: number, errors: RowError[]}>
  */
-async function insertRowsIndividually(
+async function insertRowsInChunks(
   insertData: Array<{ batchId: number; rowNumber: number; data: SheetDataRow }>,
-  sheetDataArray: SheetDataRow[]
+  sheetDataArray: SheetDataRow[],
+  chunkSize: number = 5000
 ): Promise<{ inserted: number; errors: RowError[] }> {
   let insertedCount = 0;
   const errors: RowError[] = [];
+  const totalChunks = Math.ceil(insertData.length / chunkSize);
 
-  for (let i = 0; i < insertData.length; i++) {
-    const insertResult = await db.insert(sheetData).values(insertData[i]).catch((rowError: unknown) => {
-      const errorMessage = getErrorMessage(rowError);
-      errors.push({
-        rowIndex: i,
-        rowNumber: i + 1,
-        rowData: sheetDataArray[i],
-        error: errorMessage,
-      });
-      console.error(`[testing] Error inserting row ${i + 1}:`, errorMessage);
+  console.log(`[testing] Inserting ${insertData.length} rows in ${totalChunks} chunks of ${chunkSize}`);
+
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const start = chunkIndex * chunkSize;
+    const end = Math.min(start + chunkSize, insertData.length);
+    const chunk = insertData.slice(start, end);
+    const chunkNumber = chunkIndex + 1;
+
+    // Try to insert the chunk
+    const chunkResult = await db.insert(sheetData).values(chunk).catch((chunkError: unknown) => {
+      const errorMessage = getErrorMessage(chunkError);
+      console.warn(
+        `[testing] Chunk ${chunkNumber}/${totalChunks} failed, inserting individually:`,
+        errorMessage
+      );
       return null;
     });
 
-    if (insertResult) {
-      insertedCount++;
+    if (chunkResult) {
+      // Chunk insert succeeded
+      insertedCount += chunk.length;
+      if (chunkNumber % 10 === 0 || chunkNumber === totalChunks) {
+        console.log(
+          `[testing] Progress: ${chunkNumber}/${totalChunks} chunks inserted (${insertedCount}/${insertData.length} rows)`
+        );
+      }
+    } else {
+      // Chunk insert failed, try individual inserts for this chunk
+      for (let i = start; i < end; i++) {
+        const insertResult = await db.insert(sheetData).values(insertData[i]).catch((rowError: unknown) => {
+          const errorMessage = getErrorMessage(rowError);
+          errors.push({
+            rowIndex: i,
+            rowNumber: i + 1,
+            rowData: sheetDataArray[i],
+            error: errorMessage,
+          });
+          return null;
+        });
+
+        if (insertResult) {
+          insertedCount++;
+        }
+      }
     }
   }
 
@@ -174,7 +206,8 @@ export async function storeSheetData(
 
   // Get the next batch_id
   const batchId = await getNextBatchId(tableName);
-  console.log(`[testing] Generated batch_id: ${batchId} for ${sheetDataArray.length} rows`);
+  const totalRows = sheetDataArray.length;
+  console.log(`[testing] Generated batch_id: ${batchId} for ${totalRows} rows`);
 
   // Prepare data for batch insert
   const insertData = sheetDataArray.map((row, index) => ({
@@ -183,10 +216,30 @@ export async function storeSheetData(
     data: row, // Drizzle will automatically handle JSONB conversion
   }));
 
-  // Try batch insert first
+  // For large datasets (>10000 rows), use chunked inserts to avoid stack overflow
+  const CHUNK_SIZE = 5000;
+  const useChunkedInserts = totalRows > 10000;
+
+  if (useChunkedInserts) {
+    console.log(`[testing] Large dataset detected (${totalRows} rows), using chunked inserts`);
+    const { inserted, errors } = await insertRowsInChunks(insertData, sheetDataArray, CHUNK_SIZE);
+
+    console.log(
+      `[testing] Completed: Inserted ${inserted}/${totalRows} rows with batch_id: ${batchId}, ${errors.length} errors`
+    );
+
+    return {
+      success: true,
+      batchId,
+      inserted,
+      errors,
+    };
+  }
+
+  // For smaller datasets, try single batch insert first
   const batchInsertResult = await db.insert(sheetData).values(insertData).catch((insertError: unknown) => {
     console.warn(
-      `[testing] Batch insert failed, attempting individual inserts:`,
+      `[testing] Batch insert failed, attempting chunked inserts:`,
       getErrorMessage(insertError)
     );
     return null;
@@ -194,23 +247,22 @@ export async function storeSheetData(
 
   // If batch insert succeeded
   if (batchInsertResult) {
-    const insertedCount = insertData.length;
     console.log(
-      `[testing] Successfully inserted ${insertedCount} rows with batch_id: ${batchId}`
+      `[testing] Successfully inserted ${totalRows} rows with batch_id: ${batchId}`
     );
     return {
       success: true,
       batchId,
-      inserted: insertedCount,
+      inserted: totalRows,
       errors: [],
     };
   }
 
-  // Fallback to individual inserts
-  const { inserted, errors } = await insertRowsIndividually(insertData, sheetDataArray);
+  // Fallback to chunked inserts
+  const { inserted, errors } = await insertRowsInChunks(insertData, sheetDataArray, CHUNK_SIZE);
 
   console.log(
-    `[testing] Inserted ${inserted} rows with batch_id: ${batchId}, ${errors.length} errors`
+    `[testing] Inserted ${inserted}/${totalRows} rows with batch_id: ${batchId}, ${errors.length} errors`
   );
 
   return {
