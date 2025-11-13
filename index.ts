@@ -132,8 +132,8 @@ app.get(
 // Endpoint to fetch all rows for a specific batch_id
 app.get(
   "/api/batch/:batchId",
-  asyncHandler(async (req: Request<{ batchId: string }>, res: Response) => {
-    const batchIdParam = req.params.batchId;
+  asyncHandler(async (req: Request, res: Response) => {
+    const batchIdParam = (req.params as { batchId: string }).batchId;
     const batchId = parseInt(batchIdParam, 10);
 
     // Early return for invalid batchId

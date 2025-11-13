@@ -23,7 +23,7 @@ export class AppError extends Error {
 export function createErrorResponse(
   error: string,
   message?: string,
-  statusCode: number = 500
+  _statusCode: number = 500
 ): ErrorResponse {
   return {
     success: false,

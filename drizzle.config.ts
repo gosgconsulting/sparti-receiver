@@ -1,13 +1,12 @@
 // Drizzle configuration for migrations and schema management
-import type { Config } from "drizzle-kit";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-const config: Config = {
+const config = {
   schema: "./db/schema.ts",
   out: "./drizzle",
-  dialect: "postgresql",
+  dialect: "postgresql" as const,
   dbCredentials: {
     host: process.env.DB_HOST || "localhost",
     port: parseInt(process.env.DB_PORT || "5432", 10),

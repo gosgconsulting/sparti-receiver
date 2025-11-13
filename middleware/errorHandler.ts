@@ -1,6 +1,6 @@
 // Express error handling middleware
 import { Request, Response, NextFunction } from "express";
-import { AppError, getErrorMessage, sendErrorResponse, isAppError } from "../utils/errors";
+import { getErrorMessage, sendErrorResponse, isAppError } from "../utils/errors";
 
 /**
  * Global error handling middleware
