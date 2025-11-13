@@ -24,6 +24,21 @@ export function errorHandler(
 
   // Handle known error types
   if (err instanceof Error) {
+    // Check for request size errors
+    if (
+      errorMessage.includes("request entity too large") ||
+      errorMessage.includes("payload too large") ||
+      errorMessage.includes("too large")
+    ) {
+      sendErrorResponse(
+        res,
+        "Request payload too large",
+        413,
+        "The request payload exceeds the maximum allowed size of 100MB. Please reduce the data size and try again."
+      );
+      return;
+    }
+
     // Check for database connection errors
     if (errorMessage.includes("ECONNREFUSED") || errorMessage.includes("connection")) {
       sendErrorResponse(

@@ -63,6 +63,8 @@ npm run db:studio
 
 Upload data from Google Sheets.
 
+**Note:** Maximum request size is 100MB. For larger datasets, consider splitting the data into multiple requests.
+
 **Request Body:**
 ```json
 {

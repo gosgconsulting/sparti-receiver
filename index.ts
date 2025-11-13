@@ -17,7 +17,9 @@ dotenv.config();
 const app = express();
 const port = parseInt(process.env.PORT || "3000", 10);
 
-app.use(express.json()); // Middleware to parse JSON bodies
+// Middleware to parse JSON bodies with 100MB limit
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
 // Initialize database schema and test connection on startup
 (async (): Promise<void> => {
